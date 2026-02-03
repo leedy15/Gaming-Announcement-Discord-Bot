@@ -29,7 +29,6 @@ RSS_FEEDS = {
     "Riot Games": "https://www.riotgames.com/en/rss",
     "Capcom Unity": "https://www.capcom-unity.com/rss/",
     "Devolver Digital": "https://www.devolverdigital.com/rss",
-    "Gearbox Software": "https://gearboxsoftware.com/feed",
     "CD Projekt Red": "https://en.cdprojektred.com/feed/"
 }
 
@@ -186,3 +185,4 @@ async def setup_hook():
     client.loop.create_task(run_webserver())
 
 client.run(TOKEN)
+
