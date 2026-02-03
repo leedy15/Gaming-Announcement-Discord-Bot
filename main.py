@@ -2,11 +2,14 @@ import discord
 import feedparser
 import asyncio
 import os
-from datetime import datetime, UTC
+from datetime import datetime, timezone  # Use timezone instead of deprecated UTC
+from aiohttp import web
 
+# Load your token and channel ID from environment variables
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
+# Your existing RSS feeds dictionary
 RSS_FEEDS = {
     "PlayStation": "https://blog.playstation.com/feed/",
     "Xbox": "https://news.xbox.com/en-us/feed/",
@@ -86,11 +89,11 @@ async def get_or_create_thread(channel, event_name):
     if event_name in event_threads:
         return event_threads[event_name]
 
-    date = datetime.now(UTC).strftime("%b %Y")
+    date = datetime.now(timezone.utc).strftime("%b %Y")
     message = await channel.send(f"🔥 **{event_name} announcements**")
     thread = await message.create_thread(
         name=f"🎮 {event_name} – {date}",
-        auto_archive_duration=1440
+        auto_archive_duration=1440  # 24 hours
     )
 
     event_threads[event_name] = thread
@@ -99,6 +102,10 @@ async def get_or_create_thread(channel, event_name):
 async def check_feeds():
     await client.wait_until_ready()
     channel = client.get_channel(CHANNEL_ID)
+
+    if channel is None:
+        print("⚠️ ERROR: Channel not found. Check CHANNEL_ID.")
+        return
 
     while not client.is_closed():
         for source, url in RSS_FEEDS.items():
@@ -138,7 +145,23 @@ async def check_feeds():
                         embed=embed
                     )
 
-        await asyncio.sleep(900)
+        await asyncio.sleep(900)  # 15 minutes
+
+# === HTTP server to keep Render awake ===
+
+async def handle(request):
+    return web.Response(text="Bot is alive!")
+
+async def run_webserver():
+    app = web.Application()
+    app.add_routes([web.get('/', handle)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    print("✅ HTTP server running on port 8080")
+
+# === Discord Events ===
 
 @client.event
 async def on_ready():
@@ -146,6 +169,8 @@ async def on_ready():
 
 @client.event
 async def setup_hook():
+    # Start both the feed checking and the HTTP server tasks when bot starts
     client.loop.create_task(check_feeds())
-client.run(TOKEN)
+    client.loop.create_task(run_webserver())
 
+client.run(TOKEN)
