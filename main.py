@@ -2,10 +2,7 @@ import discord
 import feedparser
 import asyncio
 import os
-from dotenv import load_dotenv
 from datetime import datetime, UTC
-
-load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
@@ -151,3 +148,4 @@ async def on_ready():
 async def setup_hook():
     client.loop.create_task(check_feeds())
 client.run(TOKEN)
+
