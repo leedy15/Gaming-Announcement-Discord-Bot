@@ -2,14 +2,16 @@ import discord
 import feedparser
 import asyncio
 import os
-from datetime import datetime, timezone  # Use timezone instead of deprecated UTC
+from datetime import datetime, timezone
 from aiohttp import web
+from dotenv import load_dotenv
 
-# Load your token and channel ID from environment variables
+# Load .env file locally (optional; remove if using environment variables in hosting)
+load_dotenv()
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
-# Your existing RSS feeds dictionary
 RSS_FEEDS = {
     "PlayStation": "https://blog.playstation.com/feed/",
     "Xbox": "https://news.xbox.com/en-us/feed/",
@@ -18,11 +20,9 @@ RSS_FEEDS = {
     "IGN": "https://feeds.ign.com/ign/games-all",
     "GameSpot": "https://www.gamespot.com/feeds/news/",
     "Polygon": "https://www.polygon.com/rss/index.xml",
-    "Kotaku": "https://kotaku.com/rss",
     "Game Informer": "https://www.gameinformer.com/rss",
     "Eurogamer": "https://www.eurogamer.net/?format=rss",
     "PC Gamer": "https://www.pcgamer.com/rss/",
-    "Rock Paper Shotgun": "https://www.rockpapershotgun.com/feed",
     "Bethesda": "https://bethesda.net/en/rss",
     "Blizzard": "https://news.blizzard.com/en-us/rss.xml",
     "Ubisoft": "https://www.ubisoft.com/en-us/rss",
@@ -57,11 +57,11 @@ INCLUDE_KEYWORDS = [
     "announce", "announced", "reveal", "trailer",
     "world premiere", "new game", "launch",
     "release date", "expansion", "dlc",
-    "gameplay reveal"
+    "gameplay reveal", "patch", "update"
 ]
 
 EXCLUDE_KEYWORDS = [
-    "review", "patch", "update", "hotfix",
+    "review", "hotfix",
     "sale", "interview", "opinion",
     "guide", "rumor", "leak"
 ]
@@ -69,7 +69,22 @@ EXCLUDE_KEYWORDS = [
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
-posted_links = set()
+# === Persistence helpers ===
+POSTED_LINKS_FILE = "posted_links.txt"
+
+def load_posted_links():
+    try:
+        with open(POSTED_LINKS_FILE, "r") as f:
+            return set(line.strip() for line in f.readlines())
+    except FileNotFoundError:
+        return set()
+
+def save_posted_links():
+    with open(POSTED_LINKS_FILE, "w") as f:
+        for link in posted_links:
+            f.write(link + "\n")
+
+posted_links = load_posted_links()
 event_threads = {}
 
 def is_big_announcement(title, summary):
@@ -93,7 +108,7 @@ async def get_or_create_thread(channel, event_name):
     message = await channel.send(f"🔥 **{event_name} announcements**")
     thread = await message.create_thread(
         name=f"🎮 {event_name} – {date}",
-        auto_archive_duration=1440  # 24 hours
+        auto_archive_duration=1440
     )
 
     event_threads[event_name] = thread
@@ -122,6 +137,7 @@ async def check_feeds():
                     continue
 
                 posted_links.add(entry.link)
+                save_posted_links()
 
                 embed = discord.Embed(
                     title=title,
@@ -147,8 +163,7 @@ async def check_feeds():
 
         await asyncio.sleep(900)  # 15 minutes
 
-# === HTTP server to keep Render awake ===
-
+# HTTP server to keep Render awake
 async def handle(request):
     return web.Response(text="Bot is alive!")
 
@@ -161,15 +176,12 @@ async def run_webserver():
     await site.start()
     print("✅ HTTP server running on port 8080")
 
-# === Discord Events ===
-
 @client.event
 async def on_ready():
     print(f"🔥 Bot online as {client.user}")
 
 @client.event
 async def setup_hook():
-    # Start both the feed checking and the HTTP server tasks when bot starts
     client.loop.create_task(check_feeds())
     client.loop.create_task(run_webserver())
 
