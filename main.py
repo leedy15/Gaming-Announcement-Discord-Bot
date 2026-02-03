@@ -6,9 +6,6 @@ from datetime import datetime, timezone
 from aiohttp import web
 from dotenv import load_dotenv
 
-# Load .env file locally (optional; remove if using environment variables in hosting)
-load_dotenv()
-
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
@@ -185,4 +182,5 @@ async def setup_hook():
     client.loop.create_task(run_webserver())
 
 client.run(TOKEN)
+
 
