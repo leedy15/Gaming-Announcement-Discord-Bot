@@ -167,7 +167,7 @@ async def check_feeds():
                 else:
                     await channel.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
 
-        await asyncio.sleep(900)
+        await asyncio.sleep(1800)
 
 # === HTTP server for Render health checks ===
 async def handle(request):
@@ -193,4 +193,5 @@ async def setup_hook():
     client.loop.create_task(run_webserver())
 
 client.run(TOKEN, reconnect-True)
+
 
