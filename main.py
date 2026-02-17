@@ -7,6 +7,11 @@ from aiohttp import web
 from dotenv import load_dotenv
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+
+if not TOKEN:
+    print("ERROR: TOKEN not found")
+    sys.exit(1)
+    
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
 RSS_FEEDS = {
@@ -182,5 +187,6 @@ async def setup_hook():
     client.loop.create_task(run_webserver())
 
 client.run(TOKEN)
+
 
 
