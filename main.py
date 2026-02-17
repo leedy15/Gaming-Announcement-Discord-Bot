@@ -6,7 +6,7 @@ import sys
 from datetime import datetime, timezone
 from aiohttp import web
 from dotenv import load_dotenv
-from discord.errors import HTTPException
+import random
 
 # === Load environment variables ===
 load_dotenv()
@@ -76,6 +76,9 @@ EXCLUDE_KEYWORDS = [
     "opinion", "guide", "rumor", "leak"
 ]
 
+intents = discord.Intents.default()
+client = discord.Client(intents=intents)
+
 POSTED_LINKS_FILE = "posted_links.txt"
 
 def load_posted_links():
@@ -131,15 +134,20 @@ async def check_feeds():
     while not client.is_closed():
         for source, url in RSS_FEEDS.items():
             feed = feedparser.parse(url)
+
             for entry in feed.entries[:10]:
                 if entry.link in posted_links:
                     continue
+
                 title = entry.title
                 summary = entry.get("summary", "") or ""
+
                 if not is_big_announcement(title, summary):
                     continue
+
                 posted_links.add(entry.link)
                 save_posted_links()
+
                 embed = discord.Embed(
                     title=title,
                     url=entry.link,
@@ -147,15 +155,22 @@ async def check_feeds():
                     color=0xF39C12
                 )
                 embed.set_footer(text=f"BIG GAMING ANNOUNCEMENT • {source}")
+
                 event = detect_event(f"{title} {summary}")
+
                 if event:
                     thread = await get_or_create_thread(channel, event)
                     await thread.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
                 else:
                     await channel.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
+
+                # <-- small random delay between posts to reduce rate limit hits
+                await asyncio.sleep(random.randint(2, 5))
+
+        # Wait before checking feeds again
         await asyncio.sleep(1800)
 
-# HTTP server for Render health checks
+# === HTTP server for Render health checks ===
 async def handle(request):
     return web.Response(text="Bot is running")
 
@@ -169,40 +184,17 @@ async def run_webserver():
     await site.start()
     print(f"HTTP server running on port {port}")
 
-# === Custom client class ===
-class MyClient(discord.Client):
-    async def setup_hook(self):
-        self.loop.create_task(check_feeds())
-        self.loop.create_task(run_webserver())
+@client.event
+async def on_ready():
+    print(f"Logged in as {client.user}")
 
-# === Main async entry with retry on 429 ===
+# === Asynchronous main for safe startup and Discord rate limit avoidance ===
 async def main():
-    intents = discord.Intents.default()
-    global client
-    client = MyClient(intents=intents)
-
-    delay = 60  # initial wait to avoid immediate rate-limit
-    max_retries = 5
-    retries = 0
-
-    while retries < max_retries:
-        if retries > 0:
-            print(f"Retrying login in {delay} seconds (attempt {retries+1}/{max_retries})...")
-        else:
-            print(f"Waiting {delay} seconds before connecting to Discord to avoid rate limits...")
-        await asyncio.sleep(delay)
-        try:
-            await client.start(TOKEN)
-            return
-        except HTTPException as e:
-            if e.status == 429:
-                print("Rate limited by Discord. Increasing delay and retrying...")
-                delay *= 2  # exponential backoff
-                retries += 1
-            else:
-                raise
-    print("Failed to login after multiple retries due to rate limits. Exiting.")
-    sys.exit(1)
+    print("Starting bot... waiting 30 seconds to avoid Discord rate limits")
+    await asyncio.sleep(30)  # wait before doing anything
+    client.loop.create_task(check_feeds())
+    client.loop.create_task(run_webserver())
+    await client.start(TOKEN, reconnect=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
