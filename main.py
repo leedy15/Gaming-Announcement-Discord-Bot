@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timezone
 from aiohttp import web
 from dotenv import load_dotenv
+from discord.errors import HTTPException
 
 # === Load environment variables ===
 load_dotenv()
@@ -120,9 +121,6 @@ async def get_or_create_thread(channel, event_name):
     return thread
 
 async def check_feeds():
-    # wait before starting to reduce Discord rate limit hits
-    await asyncio.sleep(30)
-
     await client.wait_until_ready()
     channel = client.get_channel(CHANNEL_ID)
 
@@ -133,20 +131,15 @@ async def check_feeds():
     while not client.is_closed():
         for source, url in RSS_FEEDS.items():
             feed = feedparser.parse(url)
-
             for entry in feed.entries[:10]:
                 if entry.link in posted_links:
                     continue
-
                 title = entry.title
                 summary = entry.get("summary", "") or ""
-
                 if not is_big_announcement(title, summary):
                     continue
-
                 posted_links.add(entry.link)
                 save_posted_links()
-
                 embed = discord.Embed(
                     title=title,
                     url=entry.link,
@@ -154,18 +147,15 @@ async def check_feeds():
                     color=0xF39C12
                 )
                 embed.set_footer(text=f"BIG GAMING ANNOUNCEMENT • {source}")
-
                 event = detect_event(f"{title} {summary}")
-
                 if event:
                     thread = await get_or_create_thread(channel, event)
                     await thread.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
                 else:
                     await channel.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
+        await asyncio.sleep(1800)
 
-        await asyncio.sleep(1800)  # check feeds every 30 minutes
-
-# === HTTP server for Render health checks ===
+# HTTP server for Render health checks
 async def handle(request):
     return web.Response(text="Bot is running")
 
@@ -185,13 +175,34 @@ class MyClient(discord.Client):
         self.loop.create_task(check_feeds())
         self.loop.create_task(run_webserver())
 
-# === Create client after class is defined ===
-intents = discord.Intents.default()
-client = MyClient(intents=intents)
+# === Main async entry with retry on 429 ===
+async def main():
+    intents = discord.Intents.default()
+    global client
+    client = MyClient(intents=intents)
 
-@client.event
-async def on_ready():
-    print(f"Logged in as {client.user}")
+    delay = 60  # initial wait to avoid immediate rate-limit
+    max_retries = 5
+    retries = 0
 
-print("Starting bot... waiting 30 seconds to avoid Discord rate limits")
-client.run(TOKEN, reconnect=True)
+    while retries < max_retries:
+        if retries > 0:
+            print(f"Retrying login in {delay} seconds (attempt {retries+1}/{max_retries})...")
+        else:
+            print(f"Waiting {delay} seconds before connecting to Discord to avoid rate limits...")
+        await asyncio.sleep(delay)
+        try:
+            await client.start(TOKEN)
+            return
+        except HTTPException as e:
+            if e.status == 429:
+                print("Rate limited by Discord. Increasing delay and retrying...")
+                delay *= 2  # exponential backoff
+                retries += 1
+            else:
+                raise
+    print("Failed to login after multiple retries due to rate limits. Exiting.")
+    sys.exit(1)
+
+if __name__ == "__main__":
+    asyncio.run(main())
