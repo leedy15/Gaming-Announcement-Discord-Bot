@@ -126,6 +126,48 @@ async def get_or_create_thread(channel, event_name):
     return thread
 
 
+# === Embed style colors per source ===
+SOURCE_COLORS = {
+    "PlayStation": 0x003791,
+    "Xbox": 0x107C10,
+    "Nintendo": 0xE60012,
+    "Steam": 0x1B2838,
+    "IGN": 0xE60012,
+    "GameSpot": 0xFF4500,
+    "Polygon": 0x7B61FF,
+    "Game Informer": 0xF39C12,
+    "Eurogamer": 0x00A0E3,
+    "PC Gamer": 0x008080,
+    "Bethesda": 0xA3A3A3,
+    "Blizzard": 0x00A2E8,
+    "Ubisoft": 0x1CABE2,
+    "Riot Games": 0xE6322A,
+    "Capcom Unity": 0x003DA5,
+    "Devolver Digital": 0xFF0080,
+    "CD Projekt Red": 0xDA1E28
+}
+
+# === New function to extract feed images ===
+def extract_image(entry):
+    # 1. Check media_content
+    if 'media_content' in entry:
+        for media in entry.media_content:
+            if 'url' in media:
+                return media['url']
+    # 2. Check media_thumbnail
+    if 'media_thumbnail' in entry:
+        for media in entry.media_thumbnail:
+            if 'url' in media:
+                return media['url']
+    # 3. Parse summary for <img>
+    import re
+    match = re.search(r'<img[^>]+src="([^">]+)"', entry.get('summary', '') or '')
+    if match:
+        return match.group(1)
+    # 4. Fallback
+    return None
+
+
 async def check_feeds():
     await client.wait_until_ready()
     channel = client.get_channel(CHANNEL_ID)
@@ -151,16 +193,28 @@ async def check_feeds():
                 posted_links.add(entry.link)
                 save_posted_links()
 
+                event = detect_event(f"{title} {summary}")
+
+                # --- Embed Styling ---
                 embed = discord.Embed(
                     title=title,
                     url=entry.link,
-                    description=(summary[:400] + "...") if summary else "No summary available",
-                    color=0xF39C12
+                    description=(summary[:300] + "..." if len(summary) > 300 else summary),
+                    color=SOURCE_COLORS.get(source, 0xF39C12),
+                    timestamp=datetime.now(timezone.utc)
                 )
-                embed.set_footer(text=f"BIG GAMING ANNOUNCEMENT • {source}")
 
-                event = detect_event(f"{title} {summary}")
+                embed.set_author(name=source)
+                embed.set_footer(text="BIG GAMING ANNOUNCEMENT")
 
+                # --- Set dynamic thumbnail ---
+                image_url = extract_image(entry)
+                if image_url:
+                    embed.set_thumbnail(url=image_url)
+                else:
+                    embed.set_thumbnail(url="https://i.imgur.com/6r7ZJx5.png")  # fallback
+
+                # --- Send to thread or channel ---
                 if event:
                     thread = await get_or_create_thread(channel, event)
                     await thread.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
