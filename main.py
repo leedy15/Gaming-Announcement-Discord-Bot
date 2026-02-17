@@ -2,17 +2,30 @@ import discord
 import feedparser
 import asyncio
 import os
+import sys
+import time
 from datetime import datetime, timezone
 from aiohttp import web
 from dotenv import load_dotenv
 
+# === Load environment variables ===
+load_dotenv()
+
 TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 if not TOKEN:
-    print("ERROR: TOKEN not found")
+    print("FATAL: DISCORD_TOKEN missing")
     sys.exit(1)
-    
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+
+if not CHANNEL_ID:
+    print("FATAL: CHANNEL_ID missing")
+    sys.exit(1)
+
+CHANNEL_ID = int(CHANNEL_ID)
+
+# small delay prevents burst reconnect rate limits
+time.sleep(5)
 
 RSS_FEEDS = {
     "PlayStation": "https://blog.playstation.com/feed/",
@@ -62,15 +75,13 @@ INCLUDE_KEYWORDS = [
 ]
 
 EXCLUDE_KEYWORDS = [
-    "review", "hotfix",
-    "sale", "interview", "opinion",
-    "guide", "rumor", "leak"
+    "review", "hotfix", "sale", "interview",
+    "opinion", "guide", "rumor", "leak"
 ]
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
-# === Persistence helpers ===
 POSTED_LINKS_FILE = "posted_links.txt"
 
 def load_posted_links():
@@ -120,7 +131,7 @@ async def check_feeds():
     channel = client.get_channel(CHANNEL_ID)
 
     if channel is None:
-        print("⚠️ ERROR: Channel not found. Check CHANNEL_ID.")
+        print("ERROR: Channel not found. Check CHANNEL_ID.")
         return
 
     while not client.is_closed():
@@ -132,7 +143,7 @@ async def check_feeds():
                     continue
 
                 title = entry.title
-                summary = entry.get("summary", "")
+                summary = entry.get("summary", "") or ""
 
                 if not is_big_announcement(title, summary):
                     continue
@@ -143,7 +154,7 @@ async def check_feeds():
                 embed = discord.Embed(
                     title=title,
                     url=entry.link,
-                    description=summary[:400] + "...",
+                    description=(summary[:400] + "...") if summary else "No summary available",
                     color=0xF39C12
                 )
                 embed.set_footer(text=f"BIG GAMING ANNOUNCEMENT • {source}")
@@ -152,41 +163,33 @@ async def check_feeds():
 
                 if event:
                     thread = await get_or_create_thread(channel, event)
-                    await thread.send(
-                        content=f"🔗 **Direct link:** {entry.link}",
-                        embed=embed
-                    )
+                    await thread.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
                 else:
-                    await channel.send(
-                        content=f"🔗 **Direct link:** {entry.link}",
-                        embed=embed
-                    )
+                    await channel.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
 
-        await asyncio.sleep(900)  # 15 minutes
+        await asyncio.sleep(900)
 
-# HTTP server to keep Render awake
+# === HTTP server for Render health checks ===
 async def handle(request):
-    return web.Response(text="Bot is alive!")
+    return web.Response(text="Bot is running")
 
 async def run_webserver():
+    port = int(os.getenv("PORT", 10000))
     app = web.Application()
-    app.add_routes([web.get('/', handle)])
+    app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    print("✅ HTTP server running on port 8080")
+    print(f"HTTP server running on port {port}")
 
 @client.event
 async def on_ready():
-    print(f"🔥 Bot online as {client.user}")
+    print(f"Logged in as {client.user}")
 
 @client.event
 async def setup_hook():
     client.loop.create_task(check_feeds())
     client.loop.create_task(run_webserver())
 
-client.run(TOKEN)
-
-
-
+client.run(TOKEN, rec
