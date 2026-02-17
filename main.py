@@ -6,7 +6,6 @@ import sys
 from datetime import datetime, timezone
 from aiohttp import web
 from dotenv import load_dotenv
-import random
 
 # === Load environment variables ===
 load_dotenv()
@@ -76,10 +75,8 @@ EXCLUDE_KEYWORDS = [
     "opinion", "guide", "rumor", "leak"
 ]
 
-intents = discord.Intents.default()
-client = discord.Client(intents=intents)
-
 POSTED_LINKS_FILE = "posted_links.txt"
+
 
 def load_posted_links():
     try:
@@ -88,13 +85,16 @@ def load_posted_links():
     except FileNotFoundError:
         return set()
 
+
 def save_posted_links():
     with open(POSTED_LINKS_FILE, "w") as f:
         for link in posted_links:
             f.write(link + "\n")
 
+
 posted_links = load_posted_links()
 event_threads = {}
+
 
 def is_big_announcement(title, summary):
     text = f"{title} {summary}".lower()
@@ -102,12 +102,14 @@ def is_big_announcement(title, summary):
         return False
     return any(word in text for word in INCLUDE_KEYWORDS)
 
+
 def detect_event(text):
     text = text.lower()
     for event, keyword in EVENT_KEYWORDS.items():
         if keyword in text:
             return event
     return None
+
 
 async def get_or_create_thread(channel, event_name):
     if event_name in event_threads:
@@ -123,6 +125,7 @@ async def get_or_create_thread(channel, event_name):
     event_threads[event_name] = thread
     return thread
 
+
 async def check_feeds():
     await client.wait_until_ready()
     channel = client.get_channel(CHANNEL_ID)
@@ -131,7 +134,7 @@ async def check_feeds():
         print("ERROR: Channel not found. Check CHANNEL_ID.")
         return
 
-    while not client.is_closed():
+    while True:
         for source, url in RSS_FEEDS.items():
             feed = feedparser.parse(url)
 
@@ -164,15 +167,13 @@ async def check_feeds():
                 else:
                     await channel.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
 
-                # <-- small random delay between posts to reduce rate limit hits
-                await asyncio.sleep(random.randint(2, 5))
+        await asyncio.sleep(1800)  # check every 30 min
 
-        # Wait before checking feeds again
-        await asyncio.sleep(1800)
 
 # === HTTP server for Render health checks ===
 async def handle(request):
     return web.Response(text="Bot is running")
+
 
 async def run_webserver():
     port = int(os.getenv("PORT", 10000))
@@ -184,17 +185,22 @@ async def run_webserver():
     await site.start()
     print(f"HTTP server running on port {port}")
 
+
+# === Subclass Client to use setup_hook ===
+class MyClient(discord.Client):
+    async def setup_hook(self):
+        print("Waiting 30 seconds before starting feeds to avoid rate limits...")
+        await asyncio.sleep(30)
+        self.loop.create_task(check_feeds())
+        self.loop.create_task(run_webserver())
+
+
+intents = discord.Intents.default()
+client = MyClient(intents=intents)
+
 @client.event
 async def on_ready():
     print(f"Logged in as {client.user}")
 
-# === Asynchronous main for safe startup and Discord rate limit avoidance ===
-async def main():
-    print("Starting bot... waiting 30 seconds to avoid Discord rate limits")
-    await asyncio.sleep(30)  # wait before doing anything
-    client.loop.create_task(check_feeds())
-    client.loop.create_task(run_webserver())
-    await client.start(TOKEN, reconnect=True)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# === Run bot ===
+client.run(TOKEN)
