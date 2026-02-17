@@ -179,18 +179,19 @@ async def run_webserver():
     await site.start()
     print(f"HTTP server running on port {port}")
 
-@client.event
-async def on_ready():
-    print(f"Logged in as {client.user}")
-
-# === Use setup_hook to start tasks safely ===
+# === Custom client class ===
 class MyClient(discord.Client):
     async def setup_hook(self):
         self.loop.create_task(check_feeds())
         self.loop.create_task(run_webserver())
 
+# === Create client after class is defined ===
 intents = discord.Intents.default()
 client = MyClient(intents=intents)
+
+@client.event
+async def on_ready():
+    print(f"Logged in as {client.user}")
 
 print("Starting bot... waiting 30 seconds to avoid Discord rate limits")
 client.run(TOKEN, reconnect=True)
