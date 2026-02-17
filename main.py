@@ -192,4 +192,5 @@ async def setup_hook():
     client.loop.create_task(check_feeds())
     client.loop.create_task(run_webserver())
 
-client.run(TOKEN, rec
+client.run(TOKEN, reconnect-True)
+
