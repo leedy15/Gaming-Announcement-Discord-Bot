@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timezone
 from aiohttp import web
 from dotenv import load_dotenv
+import re
 
 # === Load environment variables ===
 load_dotenv()
@@ -147,8 +148,32 @@ SOURCE_COLORS = {
     "CD Projekt Red": 0xDA1E28
 }
 
-# === New function to extract feed images ===
+
+# --- New functions for clean summary and images ---
+def clean_html(text):
+    """Remove HTML tags and decode HTML entities."""
+    if not text:
+        return ""
+    # Remove <img> tags
+    text = re.sub(r'<img[^>]*>', '', text)
+    # Remove all other tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Decode HTML entities like &amp;
+    import html
+    text = html.unescape(text)
+    return text.strip()
+
+
+def highlight_keywords(text):
+    """Bold all key INCLUDE_KEYWORDS in the text."""
+    for kw in INCLUDE_KEYWORDS:
+        pattern = re.compile(re.escape(kw), re.IGNORECASE)
+        text = pattern.sub(lambda m: f"**{m.group(0)}**", text)
+    return text
+
+
 def extract_image(entry):
+    """Get main image from RSS entry."""
     # 1. Check media_content
     if 'media_content' in entry:
         for media in entry.media_content:
@@ -160,7 +185,6 @@ def extract_image(entry):
             if 'url' in media:
                 return media['url']
     # 3. Parse summary for <img>
-    import re
     match = re.search(r'<img[^>]+src="([^">]+)"', entry.get('summary', '') or '')
     if match:
         return match.group(1)
@@ -185,7 +209,8 @@ async def check_feeds():
                     continue
 
                 title = entry.title
-                summary = entry.get("summary", "") or ""
+                summary = clean_html(entry.get("summary", "") or "")
+                summary = highlight_keywords(summary)
 
                 if not is_big_announcement(title, summary):
                     continue
@@ -199,7 +224,7 @@ async def check_feeds():
                 embed = discord.Embed(
                     title=title,
                     url=entry.link,
-                    description=(summary[:300] + "..." if len(summary) > 300 else summary),
+                    description=(summary[:350] + "..." if len(summary) > 350 else summary),
                     color=SOURCE_COLORS.get(source, 0xF39C12),
                     timestamp=datetime.now(timezone.utc)
                 )
@@ -207,19 +232,17 @@ async def check_feeds():
                 embed.set_author(name=source)
                 embed.set_footer(text="BIG GAMING ANNOUNCEMENT")
 
-                # --- Set dynamic thumbnail ---
+                # --- Set main image for large embed ---
                 image_url = extract_image(entry)
                 if image_url:
-                    embed.set_thumbnail(url=image_url)
-                else:
-                    embed.set_thumbnail(url="https://i.imgur.com/6r7ZJx5.png")  # fallback
+                    embed.set_image(url=image_url)
 
                 # --- Send to thread or channel ---
                 if event:
                     thread = await get_or_create_thread(channel, event)
-                    await thread.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
+                    await thread.send(embed=embed)
                 else:
-                    await channel.send(content=f"🔗 **Direct link:** {entry.link}", embed=embed)
+                    await channel.send(embed=embed)
 
         await asyncio.sleep(1800)  # check every 30 min
 
