@@ -1,5 +1,5 @@
 discord.py
-python-dotenv
 feedparser
 aiohttp
-flask
+python-dotenv
+
