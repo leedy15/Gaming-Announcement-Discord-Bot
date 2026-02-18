@@ -78,7 +78,7 @@ EXCLUDE_KEYWORDS = [
 
 POSTED_LINKS_FILE = "posted_links.txt"
 
-
+# === Utility functions ===
 def load_posted_links():
     try:
         with open(POSTED_LINKS_FILE, "r") as f:
@@ -86,16 +86,13 @@ def load_posted_links():
     except FileNotFoundError:
         return set()
 
-
 def save_posted_links():
     with open(POSTED_LINKS_FILE, "w") as f:
         for link in posted_links:
             f.write(link + "\n")
 
-
 posted_links = load_posted_links()
 event_threads = {}
-
 
 def is_big_announcement(title, summary):
     text = f"{title} {summary}".lower()
@@ -103,14 +100,12 @@ def is_big_announcement(title, summary):
         return False
     return any(word in text for word in INCLUDE_KEYWORDS)
 
-
 def detect_event(text):
     text = text.lower()
     for event, keyword in EVENT_KEYWORDS.items():
         if keyword in text:
             return event
     return None
-
 
 async def get_or_create_thread(channel, event_name):
     if event_name in event_threads:
@@ -126,8 +121,6 @@ async def get_or_create_thread(channel, event_name):
     event_threads[event_name] = thread
     return thread
 
-
-# === Embed style colors per source ===
 SOURCE_COLORS = {
     "PlayStation": 0x003791,
     "Xbox": 0x107C10,
@@ -148,129 +141,146 @@ SOURCE_COLORS = {
     "CD Projekt Red": 0xDA1E28
 }
 
-
-# --- New functions for clean summary and images ---
+# --- HTML Cleaning & Keywords ---
 def clean_html(text):
-    """Remove HTML tags and decode HTML entities."""
     if not text:
         return ""
-    # Remove <img> tags
     text = re.sub(r'<img[^>]*>', '', text)
-    # Remove all other tags
     text = re.sub(r'<[^>]+>', '', text)
-    # Decode HTML entities like &amp;
     import html
     text = html.unescape(text)
     return text.strip()
 
-
 def highlight_keywords(text):
-    """Bold all key INCLUDE_KEYWORDS in the text."""
     for kw in INCLUDE_KEYWORDS:
         pattern = re.compile(re.escape(kw), re.IGNORECASE)
         text = pattern.sub(lambda m: f"**{m.group(0)}**", text)
     return text
 
-
+# --- Extract main image ---
 def extract_image(entry):
-    """Get main image from RSS entry."""
-    # 1. Check media_content
     if 'media_content' in entry:
         for media in entry.media_content:
             if 'url' in media:
                 return media['url']
-    # 2. Check media_thumbnail
     if 'media_thumbnail' in entry:
         for media in entry.media_thumbnail:
             if 'url' in media:
                 return media['url']
-    # 3. Parse summary for <img>
-    match = re.search(r'<img[^>]+src="([^">]+)"', entry.get('summary', '') or '')
+    match = re.search(r'<img[^>]+src="([^">]+)"', entry.get('summary','') or '')
     if match:
         return match.group(1)
-    # 4. Fallback
     return None
 
+from urllib.parse import urlparse, urlunparse
 
+def normalize_link(url):
+    parsed = urlparse(url)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
+
+# --- Main feed check ---
 async def check_feeds():
     await client.wait_until_ready()
     channel = client.get_channel(CHANNEL_ID)
-
     if channel is None:
         print("ERROR: Channel not found. Check CHANNEL_ID.")
         return
 
+    source_emojis = {
+        "PlayStation": "🎮",
+        "Xbox": "🎮",
+        "Nintendo": "🎮",
+        "Steam": "🕹️",
+        "IGN": "📰",
+        "GameSpot": "📰",
+        "Polygon": "📰",
+        "Game Informer": "📰",
+        "Eurogamer": "📰",
+        "PC Gamer": "🖥️",
+        "Bethesda": "🎮",
+        "Blizzard": "🎮",
+        "Ubisoft": "🎮",
+        "Riot Games": "🎮",
+        "Capcom Unity": "🎮",
+        "Devolver Digital": "🎮",
+        "CD Projekt Red": "🎮"
+    }
+
     while True:
         for source, url in RSS_FEEDS.items():
             feed = feedparser.parse(url)
+            new_links_added = False
 
             for entry in feed.entries[:10]:
-                if entry.link in posted_links:
+                link = normalize_link(entry.link)
+                if link in posted_links:
                     continue
 
                 title = entry.title
-                summary = clean_html(entry.get("summary", "") or "")
+                summary = clean_html(entry.get("summary","") or "")
                 summary = highlight_keywords(summary)
 
                 if not is_big_announcement(title, summary):
                     continue
 
-                posted_links.add(entry.link)
-                save_posted_links()
+                posted_links.add(link)
+                new_links_added = True
 
                 event = detect_event(f"{title} {summary}")
 
-                # --- Embed Styling ---
                 embed = discord.Embed(
                     title=title,
-                    url=entry.link,
-                    description=(summary[:350] + "..." if len(summary) > 350 else summary),
-                    color=SOURCE_COLORS.get(source, 0xF39C12),
+                    url=link,
+                    description=(summary[:350]+"..." if len(summary)>350 else summary),
+                    color=SOURCE_COLORS.get(source,0xF39C12),
                     timestamp=datetime.now(timezone.utc)
                 )
 
-                embed.set_author(name=source)
+                embed.set_author(name=f"{source_emojis.get(source,'')} {source}")
                 embed.set_footer(text="BIG GAMING ANNOUNCEMENT")
 
-                # --- Set main image for large embed ---
                 image_url = extract_image(entry)
                 if image_url:
                     embed.set_image(url=image_url)
 
-                # --- Send to thread or channel ---
+                platform = ''
+                if source=='PlayStation': platform='PS4 / PS5'
+                elif source=='Xbox': platform='Xbox One / Xbox Series X|S'
+                elif source=='Nintendo': platform='Switch'
+                elif source in ['Steam','PC Gamer']: platform='PC'
+                if platform: embed.add_field(name="Platform", value=platform, inline=True)
+                if event: embed.add_field(name="Event", value=event, inline=True)
+
                 if event:
-                    thread = await get_or_create_thread(channel, event)
+                    thread = await get_or_create_thread(channel,event)
                     await thread.send(embed=embed)
                 else:
                     await channel.send(embed=embed)
 
-        await asyncio.sleep(1800)  # check every 30 min
+            if new_links_added:
+                save_posted_links()
 
+        await asyncio.sleep(1800)
 
-# === HTTP server for Render health checks ===
-async def handle(request):
-    return web.Response(text="Bot is running")
-
-
+# --- HTTP server ---
+async def handle(request): return web.Response(text="Bot is running")
 async def run_webserver():
-    port = int(os.getenv("PORT", 10000))
+    port = int(os.getenv("PORT",10000))
     app = web.Application()
-    app.router.add_get("/", handle)
+    app.router.add_get("/",handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner,"0.0.0.0",port)
     await site.start()
     print(f"HTTP server running on port {port}")
 
-
-# === Subclass Client to use setup_hook ===
+# --- Discord Client ---
 class MyClient(discord.Client):
     async def setup_hook(self):
         print("Waiting 30 seconds before starting feeds to avoid rate limits...")
         await asyncio.sleep(30)
         self.loop.create_task(check_feeds())
         self.loop.create_task(run_webserver())
-
 
 intents = discord.Intents.default()
 client = MyClient(intents=intents)
@@ -279,5 +289,4 @@ client = MyClient(intents=intents)
 async def on_ready():
     print(f"Logged in as {client.user}")
 
-# === Run bot ===
 client.run(TOKEN)
