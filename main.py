@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from aiohttp import web
 from dotenv import load_dotenv
 import re
+from urllib.parse import urlparse, urlunparse
 
 # === Load environment variables ===
 load_dotenv()
@@ -139,27 +140,13 @@ SOURCE_COLORS = {
     "CD Projekt Red": 0xDA1E28
 }
 
-SOURCE_ICONS = {
-    "PlayStation": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/PlayStation_logo_colour.svg/128px-PlayStation_logo_colour.svg.png",
-    "Xbox": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/43/Xbox_one_logo.svg/128px-Xbox_one_logo.svg.png",
-    "Nintendo": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Nintendo_Switch_Logo.svg/128px-Nintendo_Switch_Logo.svg.png",
-    "Steam": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Steam_icon_logo.svg/128px-Steam_icon_logo.svg.png",
-    "IGN": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/IGN_logo.svg/128px-IGN_logo.svg.png",
-    "GameSpot": "https://upload.wikimedia.org/wikipedia/en/9/99/Gamespot_logo.png",
-    "Polygon": "https://upload.wikimedia.org/wikipedia/en/3/30/Polygon_logo.png",
-    "Game Informer": "https://upload.wikimedia.org/wikipedia/en/2/23/GameInformer_logo.png",
-    "Eurogamer": "https://upload.wikimedia.org/wikipedia/en/1/1b/Eurogamer_logo.png",
-    "PC Gamer": "https://upload.wikimedia.org/wikipedia/en/3/3a/PC_Gamer_logo.png",
-    "Bethesda": "https://upload.wikimedia.org/wikipedia/commons/d/d6/Bethesda_Softworks_logo.svg",
-    "Blizzard": "https://upload.wikimedia.org/wikipedia/commons/5/55/Blizzard_Entertainment_Logo.svg",
-    "Ubisoft": "https://upload.wikimedia.org/wikipedia/commons/0/0b/Ubisoft_2017.svg",
-    "Riot Games": "https://upload.wikimedia.org/wikipedia/en/2/2a/Riot_Games_logo.png",
-    "Capcom Unity": "https://upload.wikimedia.org/wikipedia/commons/2/22/Capcom_logo.svg",
-    "Devolver Digital": "https://upload.wikimedia.org/wikipedia/en/c/c5/Devolver_Digital_logo.png",
-    "CD Projekt Red": "https://upload.wikimedia.org/wikipedia/en/e/e0/CD_Projekt_Red_logo.svg"
-}
+# === NEW: Local icon loader ===
+def get_local_icon_path(source_name: str):
+    filename = f"{source_name}.png"
+    path = os.path.join(os.path.dirname(__file__), filename)
+    return path if os.path.exists(path) else None
 
-# --- HTML Cleaning & Keywords ---
+# --- HTML Cleaning ---
 def clean_html(text):
     if not text:
         return ""
@@ -175,7 +162,6 @@ def highlight_keywords(text):
         text = pattern.sub(lambda m: f"**{m.group(0)}**", text)
     return text
 
-# --- Extract main image ---
 def extract_image(entry):
     if 'media_content' in entry:
         for media in entry.media_content:
@@ -190,7 +176,6 @@ def extract_image(entry):
         return match.group(1)
     return None
 
-from urllib.parse import urlparse, urlunparse
 def normalize_link(url):
     parsed = urlparse(url)
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
@@ -199,9 +184,6 @@ def normalize_link(url):
 async def check_feeds():
     await client.wait_until_ready()
     channel = client.get_channel(CHANNEL_ID)
-    if channel is None:
-        print("ERROR: Channel not found. Check CHANNEL_ID.")
-        return
 
     while True:
         for source, url in RSS_FEEDS.items():
@@ -214,15 +196,13 @@ async def check_feeds():
                     continue
 
                 title = entry.title
-                summary = clean_html(entry.get("summary","") or "")
-                summary = highlight_keywords(summary)
+                summary = highlight_keywords(clean_html(entry.get("summary","") or ""))
 
                 if not is_big_announcement(title, summary):
                     continue
 
                 posted_links.add(link)
                 new_links_added = True
-
                 event = detect_event(f"{title} {summary}")
 
                 embed = discord.Embed(
@@ -233,8 +213,6 @@ async def check_feeds():
                     timestamp=datetime.now(timezone.utc)
                 )
 
-                icon_url = SOURCE_ICONS.get(source)
-                embed.set_author(name=source.upper(), icon_url=icon_url)
                 embed.set_footer(text="BIG GAMING ANNOUNCEMENT")
 
                 image_url = extract_image(entry)
@@ -249,11 +227,23 @@ async def check_feeds():
                 if platform: embed.add_field(name="Platform", value=platform, inline=True)
                 if event: embed.add_field(name="Event", value=event, inline=True)
 
-                if event:
-                    thread = await get_or_create_thread(channel,event)
-                    await thread.send(embed=embed)
+                icon_path = get_local_icon_path(source)
+
+                if icon_path:
+                    file = discord.File(icon_path, filename="icon.png")
+                    embed.set_author(name=source.upper(), icon_url="attachment://icon.png")
+                    if event:
+                        thread = await get_or_create_thread(channel,event)
+                        await thread.send(embed=embed, file=file)
+                    else:
+                        await channel.send(embed=embed, file=file)
                 else:
-                    await channel.send(embed=embed)
+                    embed.set_author(name=source.upper())
+                    if event:
+                        thread = await get_or_create_thread(channel,event)
+                        await thread.send(embed=embed)
+                    else:
+                        await channel.send(embed=embed)
 
             if new_links_added:
                 save_posted_links()
@@ -262,6 +252,7 @@ async def check_feeds():
 
 # --- HTTP server ---
 async def handle(request): return web.Response(text="Bot is running")
+
 async def run_webserver():
     port = int(os.getenv("PORT",10000))
     app = web.Application()
@@ -270,12 +261,10 @@ async def run_webserver():
     await runner.setup()
     site = web.TCPSite(runner,"0.0.0.0",port)
     await site.start()
-    print(f"HTTP server running on port {port}")
 
 # --- Discord Client ---
 class MyClient(discord.Client):
     async def setup_hook(self):
-        print("Waiting 30 seconds before starting feeds to avoid rate limits...")
         await asyncio.sleep(30)
         self.loop.create_task(check_feeds())
         self.loop.create_task(run_webserver())
@@ -288,4 +277,3 @@ async def on_ready():
     print(f"Logged in as {client.user}")
 
 client.run(TOKEN)
-
