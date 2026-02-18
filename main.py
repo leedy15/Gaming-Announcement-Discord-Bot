@@ -140,11 +140,11 @@ SOURCE_COLORS = {
 }
 
 SOURCE_ICONS = {
-    "PlayStation": "https://upload.wikimedia.org/wikipedia/commons/0/05/PlayStation_logo_colour.svg",
-    "Xbox": "https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_one_logo.svg",
-    "Nintendo": "https://upload.wikimedia.org/wikipedia/commons/3/3e/Nintendo_Switch_Logo.svg",
-    "Steam": "https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg",
-    "IGN": "https://upload.wikimedia.org/wikipedia/commons/6/6b/IGN_logo.svg",
+    "PlayStation": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/PlayStation_logo_colour.svg/128px-PlayStation_logo_colour.svg.png",
+    "Xbox": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/43/Xbox_one_logo.svg/128px-Xbox_one_logo.svg.png",
+    "Nintendo": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Nintendo_Switch_Logo.svg/128px-Nintendo_Switch_Logo.svg.png",
+    "Steam": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Steam_icon_logo.svg/128px-Steam_icon_logo.svg.png",
+    "IGN": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/IGN_logo.svg/128px-IGN_logo.svg.png",
     "GameSpot": "https://upload.wikimedia.org/wikipedia/en/9/99/Gamespot_logo.png",
     "Polygon": "https://upload.wikimedia.org/wikipedia/en/3/30/Polygon_logo.png",
     "Game Informer": "https://upload.wikimedia.org/wikipedia/en/2/23/GameInformer_logo.png",
@@ -234,7 +234,7 @@ async def check_feeds():
                 )
 
                 icon_url = SOURCE_ICONS.get(source)
-                embed.set_author(name=f"**[{source.upper()}]**", icon_url=icon_url)
+                embed.set_author(name=source.upper(), icon_url=icon_url)
                 embed.set_footer(text="BIG GAMING ANNOUNCEMENT")
 
                 image_url = extract_image(entry)
@@ -288,3 +288,4 @@ async def on_ready():
     print(f"Logged in as {client.user}")
 
 client.run(TOKEN)
+
