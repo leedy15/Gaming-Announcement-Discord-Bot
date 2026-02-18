@@ -110,14 +110,12 @@ def detect_event(text):
 async def get_or_create_thread(channel, event_name):
     if event_name in event_threads:
         return event_threads[event_name]
-
     date = datetime.now(timezone.utc).strftime("%b %Y")
     message = await channel.send(f"🔥 **{event_name} announcements**")
     thread = await message.create_thread(
         name=f"🎮 {event_name} – {date}",
         auto_archive_duration=1440
     )
-
     event_threads[event_name] = thread
     return thread
 
@@ -139,6 +137,26 @@ SOURCE_COLORS = {
     "Capcom Unity": 0x003DA5,
     "Devolver Digital": 0xFF0080,
     "CD Projekt Red": 0xDA1E28
+}
+
+SOURCE_ICONS = {
+    "PlayStation": "https://upload.wikimedia.org/wikipedia/commons/0/05/PlayStation_logo_colour.svg",
+    "Xbox": "https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_one_logo.svg",
+    "Nintendo": "https://upload.wikimedia.org/wikipedia/commons/3/3e/Nintendo_Switch_Logo.svg",
+    "Steam": "https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg",
+    "IGN": "https://upload.wikimedia.org/wikipedia/commons/6/6b/IGN_logo.svg",
+    "GameSpot": "https://upload.wikimedia.org/wikipedia/en/9/99/Gamespot_logo.png",
+    "Polygon": "https://upload.wikimedia.org/wikipedia/en/3/30/Polygon_logo.png",
+    "Game Informer": "https://upload.wikimedia.org/wikipedia/en/2/23/GameInformer_logo.png",
+    "Eurogamer": "https://upload.wikimedia.org/wikipedia/en/1/1b/Eurogamer_logo.png",
+    "PC Gamer": "https://upload.wikimedia.org/wikipedia/en/3/3a/PC_Gamer_logo.png",
+    "Bethesda": "https://upload.wikimedia.org/wikipedia/commons/d/d6/Bethesda_Softworks_logo.svg",
+    "Blizzard": "https://upload.wikimedia.org/wikipedia/commons/5/55/Blizzard_Entertainment_Logo.svg",
+    "Ubisoft": "https://upload.wikimedia.org/wikipedia/commons/0/0b/Ubisoft_2017.svg",
+    "Riot Games": "https://upload.wikimedia.org/wikipedia/en/2/2a/Riot_Games_logo.png",
+    "Capcom Unity": "https://upload.wikimedia.org/wikipedia/commons/2/22/Capcom_logo.svg",
+    "Devolver Digital": "https://upload.wikimedia.org/wikipedia/en/c/c5/Devolver_Digital_logo.png",
+    "CD Projekt Red": "https://upload.wikimedia.org/wikipedia/en/e/e0/CD_Projekt_Red_logo.svg"
 }
 
 # --- HTML Cleaning & Keywords ---
@@ -167,13 +185,12 @@ def extract_image(entry):
         for media in entry.media_thumbnail:
             if 'url' in media:
                 return media['url']
-    match = re.search(r'<img[^>]+src="([^">]+)"', entry.get('summary','') or '')
+    match = re.search(r'<img[^>]+src=\"([^\">]+)\"', entry.get('summary','') or '')
     if match:
         return match.group(1)
     return None
 
 from urllib.parse import urlparse, urlunparse
-
 def normalize_link(url):
     parsed = urlparse(url)
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
@@ -185,26 +202,6 @@ async def check_feeds():
     if channel is None:
         print("ERROR: Channel not found. Check CHANNEL_ID.")
         return
-
-    source_emojis = {
-        "PlayStation": "🎮",
-        "Xbox": "🎮",
-        "Nintendo": "🎮",
-        "Steam": "🕹️",
-        "IGN": "📰",
-        "GameSpot": "📰",
-        "Polygon": "📰",
-        "Game Informer": "📰",
-        "Eurogamer": "📰",
-        "PC Gamer": "🖥️",
-        "Bethesda": "🎮",
-        "Blizzard": "🎮",
-        "Ubisoft": "🎮",
-        "Riot Games": "🎮",
-        "Capcom Unity": "🎮",
-        "Devolver Digital": "🎮",
-        "CD Projekt Red": "🎮"
-    }
 
     while True:
         for source, url in RSS_FEEDS.items():
@@ -236,7 +233,8 @@ async def check_feeds():
                     timestamp=datetime.now(timezone.utc)
                 )
 
-                embed.set_author(name=f"{source_emojis.get(source,'')} {source}")
+                icon_url = SOURCE_ICONS.get(source)
+                embed.set_author(name=f"**[{source.upper()}]**", icon_url=icon_url)
                 embed.set_footer(text="BIG GAMING ANNOUNCEMENT")
 
                 image_url = extract_image(entry)
