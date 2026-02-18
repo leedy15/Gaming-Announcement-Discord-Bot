@@ -220,10 +220,10 @@ async def check_feeds():
                     embed.set_image(url=image_url)
 
                 platform = ''
-                if source=='PlayStation': platform='PS4 / PS5'
-                elif source=='Xbox': platform='Xbox One / Xbox Series X|S'
-                elif source=='Nintendo': platform='Switch'
-                elif source in ['Steam','PC Gamer']: platform='PC'
+                if source=='PlayStation': platform='🟦 PS4 / PS5'
+                elif source=='Xbox': platform='🟩 Xbox One / Xbox Series X|S'
+                elif source=='Nintendo': platform='🔴 Switch'
+                elif source in ['Steam','PC Gamer']: platform='💻 PC'
                 if platform: embed.add_field(name="Platform", value=platform, inline=True)
                 if event: embed.add_field(name="Event", value=event, inline=True)
 
@@ -277,3 +277,4 @@ async def on_ready():
     print(f"Logged in as {client.user}")
 
 client.run(TOKEN)
+
